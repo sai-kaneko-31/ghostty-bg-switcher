@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# ghostty-bg-switcher - Ghostty 背景画像切り替え CLI
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/../lib"
+
+source "$LIB_DIR/config.zsh"
+source "$LIB_DIR/image_selector.zsh"
+source "$LIB_DIR/generator.zsh"
+
+GBSW_DEFAULT_SAVE_DIR="${HOME}/.local/share/ghostty-bg-switcher/generated"
+
+gbsw_usage() {
+  cat <<'USAGE'
+Usage: ghostty-bg-switcher <command> [options]
+
+Commands:
+  set <image_path>      Set a specific image as background
+  random <directory>    Set a random image from a directory
+  list <directory>      List supported images in a directory
+  clear                 Remove background image
+  current               Show current background image
+  generate <prompt>     Generate an image with Gemini CLI and set as background
+
+Options:
+  --opacity <value>     Set background-image-opacity (for set, random, generate)
+  --fit <mode>          Set background-image-fit (for set, random, generate)
+  --config <path>       Specify Ghostty config file path
+  --no-reload           Skip config reload after changes
+  --save-dir <path>     Directory to save generated images (for generate)
+  --help                Show this help message
+USAGE
+}
+
+# 画像ファイルの拡張子チェック
+gbsw_is_supported_image() {
+  local file="$1"
+  local ext="${file##*.}"
+  ext="$(echo "$ext" | tr '[:upper:]' '[:lower:]')"
+  case "$ext" in
+    png|jpg|jpeg) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# メイン処理
+main() {
+  local command=""
+  local opacity=""
+  local fit=""
+  local config_path=""
+  local no_reload=""
+  local save_dir="$GBSW_DEFAULT_SAVE_DIR"
+  local args=()
+
+  # 引数パース
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --help)
+        gbsw_usage
+        exit 0
+        ;;
+      --opacity)
+        opacity="$2"
+        shift 2
+        ;;
+      --fit)
+        fit="$2"
+        shift 2
+        ;;
+      --config)
+        config_path="$2"
+        shift 2
+        ;;
+      --no-reload)
+        no_reload=1
+        shift
+        ;;
+      --save-dir)
+        save_dir="$2"
+        shift 2
+        ;;
+      *)
+        args+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -n "$config_path" ]]; then
+    export GBSW_CONFIG_PATH="$config_path"
+  fi
+
+  if [[ -n "$no_reload" ]]; then
+    export GBSW_NO_RELOAD=1
+  fi
+
+  if [[ ${#args[@]} -eq 0 ]]; then
+    gbsw_usage >&2
+    exit 2
+  fi
+
+  command="${args[0]}"
+
+  case "$command" in
+    set)
+      if [[ ${#args[@]} -lt 2 ]]; then
+        echo "Error: Image path is required" >&2
+        gbsw_usage >&2
+        exit 2
+      fi
+      local image_path="${args[1]}"
+      if [[ ! -f "$image_path" ]]; then
+        echo "Error: File not found: $image_path" >&2
+        exit 1
+      fi
+      if ! gbsw_is_supported_image "$image_path"; then
+        echo "Error: Unsupported image format. Use PNG or JPEG." >&2
+        exit 1
+      fi
+      # 絶対パスに変換
+      image_path="$(cd "$(dirname "$image_path")" && pwd)/$(basename "$image_path")"
+      gbsw_config_set "background-image" "$image_path"
+      [[ -n "$opacity" ]] && gbsw_config_set "background-image-opacity" "$opacity"
+      [[ -n "$fit" ]] && gbsw_config_set "background-image-fit" "$fit"
+      gbsw_reload_config
+      echo "Background image set to: $image_path"
+      ;;
+
+    random)
+      if [[ ${#args[@]} -lt 2 ]]; then
+        echo "Error: Directory is required" >&2
+        gbsw_usage >&2
+        exit 2
+      fi
+      local dir="${args[1]}"
+      local image
+      image="$(gbsw_random_image "$dir")" || exit 1
+      gbsw_config_set "background-image" "$image"
+      [[ -n "$opacity" ]] && gbsw_config_set "background-image-opacity" "$opacity"
+      [[ -n "$fit" ]] && gbsw_config_set "background-image-fit" "$fit"
+      gbsw_reload_config
+      echo "Background image set to: $image"
+      ;;
+
+    list)
+      if [[ ${#args[@]} -lt 2 ]]; then
+        echo "Error: Directory is required" >&2
+        gbsw_usage >&2
+        exit 2
+      fi
+      local dir="${args[1]}"
+      gbsw_list_images "$dir" || exit 1
+      ;;
+
+    clear)
+      gbsw_config_remove "background-image"
+      gbsw_config_remove "background-image-opacity"
+      gbsw_config_remove "background-image-fit"
+      gbsw_config_remove "background-image-position"
+      gbsw_reload_config
+      echo "Background image cleared."
+      ;;
+
+    current)
+      local current
+      current="$(gbsw_config_get "background-image" 2>/dev/null)" || true
+      if [[ -n "$current" ]]; then
+        echo "$current"
+      else
+        echo "No background image set."
+      fi
+      ;;
+
+    generate)
+      if [[ ${#args[@]} -lt 2 ]]; then
+        echo "Error: Prompt is required" >&2
+        gbsw_usage >&2
+        exit 2
+      fi
+      local prompt="${args[1]}"
+      local timestamp
+      timestamp="$(date +%Y%m%d_%H%M%S)"
+      local output_path="${save_dir}/${timestamp}.png"
+      local generated
+      generated="$(gbsw_generate_image "$prompt" "$output_path")" || exit 1
+      gbsw_config_set "background-image" "$generated"
+      [[ -n "$opacity" ]] && gbsw_config_set "background-image-opacity" "$opacity"
+      [[ -n "$fit" ]] && gbsw_config_set "background-image-fit" "$fit"
+      gbsw_reload_config
+      echo "Background image set to: $generated"
+      ;;
+
+    *)
+      echo "Error: Unknown command: $command" >&2
+      gbsw_usage >&2
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"
