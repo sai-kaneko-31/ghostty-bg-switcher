@@ -1,14 +1,13 @@
 #!/usr/bin/env bats
 
-# CLI 統合テスト
-# bin/ghostty-bg-switcher のサブコマンドテスト
+# CLI integration tests
+# Tests for bin/ghostty-bg-switcher subcommands
 
 setup() {
   TEST_DIR="$(mktemp -d)"
   TEST_CONFIG="$TEST_DIR/config"
   IMAGE_DIR="$TEST_DIR/images"
 
-  # テスト用設定ファイル
   cat > "$TEST_CONFIG" <<'EOF'
 font-size = 14
 background-image = /existing/bg.png
@@ -16,14 +15,12 @@ background-image-opacity = 0.5
 background-image-fit = contain
 EOF
 
-  # テスト用画像ディレクトリ
   mkdir -p "$IMAGE_DIR"
   touch "$IMAGE_DIR/a.png"
   touch "$IMAGE_DIR/b.jpg"
   touch "$IMAGE_DIR/c.jpeg"
 
   export GBSW_CONFIG_PATH="$TEST_CONFIG"
-  # テスト中はリロードを無効化
   export GBSW_NO_RELOAD=1
 
   BIN="$(cd "$(dirname "$BATS_TEST_FILENAME")/../bin" && pwd)/ghostty-bg-switcher"
@@ -33,15 +30,15 @@ teardown() {
   rm -rf "$TEST_DIR"
 }
 
-# --- ヘルプ ---
+# --- help ---
 
-@test "引数なしで usage を表示して終了コード2" {
+@test "no args: show usage and exit code 2" {
   run "$BIN"
   [ "$status" -eq 2 ]
   [[ "$output" == *"usage"* ]] || [[ "$output" == *"Usage"* ]]
 }
 
-@test "--help でヘルプを表示" {
+@test "--help: show help" {
   run "$BIN" --help
   [ "$status" -eq 0 ]
   [[ "$output" == *"set"* ]]
@@ -54,37 +51,37 @@ teardown() {
 
 # --- set ---
 
-@test "set: 画像を設定できる" {
+@test "set: can set an image" {
   run "$BIN" set "$IMAGE_DIR/a.png"
   [ "$status" -eq 0 ]
   run grep "^background-image" "$TEST_CONFIG"
   [[ "$output" == *"$IMAGE_DIR/a.png"* ]]
 }
 
-@test "set: 存在しないファイルでエラー" {
+@test "set: error on nonexistent file" {
   run "$BIN" set "/no/such/file.png"
   [ "$status" -eq 1 ]
 }
 
-@test "set: 非対応フォーマットでエラー" {
+@test "set: error on unsupported format" {
   touch "$TEST_DIR/image.gif"
   run "$BIN" set "$TEST_DIR/image.gif"
   [ "$status" -eq 1 ]
 }
 
-@test "set: 引数なしでエラー" {
+@test "set: error with no args" {
   run "$BIN" set
   [ "$status" -eq 2 ]
 }
 
-@test "set --opacity: 不透明度も同時に設定" {
+@test "set --opacity: set opacity simultaneously" {
   run "$BIN" set "$IMAGE_DIR/a.png" --opacity 0.3
   [ "$status" -eq 0 ]
   run grep "^background-image-opacity" "$TEST_CONFIG"
   [[ "$output" == *"0.3"* ]]
 }
 
-@test "set --fit: フィットモードも同時に設定" {
+@test "set --fit: set fit mode simultaneously" {
   run "$BIN" set "$IMAGE_DIR/a.png" --fit cover
   [ "$status" -eq 0 ]
   run grep "^background-image-fit" "$TEST_CONFIG"
@@ -93,26 +90,26 @@ teardown() {
 
 # --- random ---
 
-@test "random: ディレクトリからランダムに画像を設定" {
+@test "random: set random image from directory" {
   run "$BIN" random "$IMAGE_DIR"
   [ "$status" -eq 0 ]
   run grep "^background-image" "$TEST_CONFIG"
   [[ "$output" == *"$IMAGE_DIR/"* ]]
 }
 
-@test "random: 存在しないディレクトリでエラー" {
+@test "random: error on nonexistent directory" {
   run "$BIN" random "/no/such/dir"
   [ "$status" -eq 1 ]
 }
 
-@test "random: 引数なしでエラー" {
+@test "random: error with no args" {
   run "$BIN" random
   [ "$status" -eq 2 ]
 }
 
 # --- list ---
 
-@test "list: 画像ファイルの一覧を表示" {
+@test "list: show image file list" {
   run "$BIN" list "$IMAGE_DIR"
   [ "$status" -eq 0 ]
   [[ "$output" == *"a.png"* ]]
@@ -120,21 +117,21 @@ teardown() {
   [[ "$output" == *"c.jpeg"* ]]
 }
 
-@test "list: 存在しないディレクトリでエラー" {
+@test "list: error on nonexistent directory" {
   run "$BIN" list "/no/such/dir"
   [ "$status" -eq 1 ]
 }
 
 # --- clear ---
 
-@test "clear: 背景画像設定を削除" {
+@test "clear: remove background image setting" {
   run "$BIN" clear
   [ "$status" -eq 0 ]
   run grep "^background-image " "$TEST_CONFIG"
-  [ "$status" -eq 1 ]  # background-image の行が消えている
+  [ "$status" -eq 1 ]
 }
 
-@test "clear: background-image-opacity 等も削除される" {
+@test "clear: also remove background-image-opacity etc" {
   run "$BIN" clear
   [ "$status" -eq 0 ]
   run grep "^background-image-opacity" "$TEST_CONFIG"
@@ -143,7 +140,7 @@ teardown() {
   [ "$status" -eq 1 ]
 }
 
-@test "clear: 他の設定は残る" {
+@test "clear: preserve other settings" {
   run "$BIN" clear
   run grep "^font-size" "$TEST_CONFIG"
   [ "$status" -eq 0 ]
@@ -151,14 +148,13 @@ teardown() {
 
 # --- current ---
 
-@test "current: 現在の背景画像パスを表示" {
+@test "current: show current background image path" {
   run "$BIN" current
   [ "$status" -eq 0 ]
   [ "$output" = "/existing/bg.png" ]
 }
 
-@test "current: 背景画像未設定の場合はメッセージ表示" {
-  # background-image を削除
+@test "current: show message when no background image set" {
   grep -v '^background-image ' "$TEST_CONFIG" > "${TEST_CONFIG}.tmp" && mv "${TEST_CONFIG}.tmp" "$TEST_CONFIG"
   run "$BIN" current
   [ "$status" -eq 0 ]
@@ -167,21 +163,21 @@ teardown() {
 
 # --- generate ---
 
-@test "generate: プロンプトなしでエラー" {
+@test "generate: error with no prompt" {
   run "$BIN" generate
   [ "$status" -eq 2 ]
 }
 
-# --- 不明なサブコマンド ---
+# --- unknown subcommand ---
 
-@test "不明なサブコマンドでエラー" {
+@test "unknown subcommand: error" {
   run "$BIN" unknown_command
   [ "$status" -eq 2 ]
 }
 
-# --- --config オプション ---
+# --- --config option ---
 
-@test "--config: 指定したパスの設定ファイルを使う" {
+@test "--config: use specified config file path" {
   OTHER_CONFIG="$TEST_DIR/other_config"
   echo "background-image = /other/image.png" > "$OTHER_CONFIG"
   unset GBSW_CONFIG_PATH
