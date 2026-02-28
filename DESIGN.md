@@ -20,7 +20,7 @@ Ghostty は設定ファイル内の以下のキーで背景画像を制御する
 | `background-image-opacity` | 不透明度 (0.0〜) | `1.0` |
 | `background-image-position` | 位置 (center, top-left 等) | `center` |
 | `background-image-fit` | フィット方法 (contain/cover/stretch/none) | `contain` |
-| `background-image-repeat` | タイル表示 | `false` |
+| ~~`background-image-repeat`~~ | ~~タイル表示~~ | サポート対象外 |
 
 設定ファイルの場所（優先順）:
 1. `$HOME/.config/ghostty/config` (XDG - 優先)
