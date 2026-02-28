@@ -17,11 +17,13 @@ ghostty-bg-switcher/
 ├── bin/
 │   └── ghostty-bg-switcher    # メインの実行ファイル（CLI エントリーポイント）
 ├── lib/
-│   ├── config.zsh             # Ghostty 設定ファイルの読み書き
-│   └── image_selector.zsh     # 画像の検索・選択ロジック
+│   ├── config.zsh             # Ghostty 設定ファイルの読み書き & リロード
+│   ├── image_selector.zsh     # 画像の検索・選択ロジック
+│   └── generator.zsh          # Gemini CLI による画像生成
 ├── test/
 │   ├── config.bats            # config.zsh のテスト
 │   ├── image_selector.bats    # image_selector.zsh のテスト
+│   ├── generator.bats         # generator.zsh のテスト
 │   ├── cli.bats               # CLI 統合テスト
 │   └── fixtures/              # テスト用フィクスチャ
 ├── CLAUDE.md
@@ -41,7 +43,7 @@ ghostty-bg-switcher/
 - macOS のパス: `$HOME/Library/Application Support/com.mitchellh.ghostty/config`
 - XDG もサポート: `$HOME/.config/ghostty/config`
 - フォーマット: `key = value`（1行1設定、`#` でコメント）
-- リロード: `cmd+shift+,` で手動リロード（自動リロードなし）
+- リロード: `pkill -SIGUSR2 ghostty` でプログラムからリロード（既存ウィンドウにも反映）
 
 ## Conventions
 
