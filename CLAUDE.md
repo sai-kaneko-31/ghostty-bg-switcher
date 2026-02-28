@@ -37,6 +37,7 @@ ghostty-bg-switcher/
 - **Spec-Driven Development (SDD):** テストを先に書き、テストが通るように実装する
 - テスト実行: `bats test/`
 - 個別テスト: `bats test/config.bats`
+- **CI:** GitHub Actions (`macos-latest`) で push/PR 時に自動テスト
 
 ## Ghostty Config
 
