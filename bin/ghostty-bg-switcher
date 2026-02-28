@@ -11,6 +11,29 @@ source "$LIB_DIR/image_selector.zsh"
 source "$LIB_DIR/generator.zsh"
 
 GBSW_DEFAULT_SAVE_DIR="${HOME}/.local/share/ghostty-bg-switcher/generated"
+GBSW_LOCK_DIR="${GBSW_LOCK_DIR:-${TMPDIR:-/tmp}/ghostty-bg-switcher.lock}"
+
+# Acquire lock using mkdir (atomic on POSIX).
+# Returns 1 if another instance is running.
+gbsw_acquire_lock() {
+  if [[ -d "$GBSW_LOCK_DIR" ]]; then
+    local pid
+    pid="$(cat "$GBSW_LOCK_DIR/pid" 2>/dev/null)" || pid=""
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      echo "Error: Another instance is already running (PID: $pid)" >&2
+      return 1
+    fi
+    # Stale lock - remove it
+    rm -rf "$GBSW_LOCK_DIR"
+  fi
+  mkdir -p "$GBSW_LOCK_DIR"
+  echo $$ > "$GBSW_LOCK_DIR/pid"
+  trap 'gbsw_release_lock' EXIT
+}
+
+gbsw_release_lock() {
+  rm -rf "$GBSW_LOCK_DIR"
+}
 
 gbsw_usage() {
   cat <<'USAGE'
@@ -103,6 +126,13 @@ main() {
   fi
 
   command="${args[0]}"
+
+  # Acquire lock for config-modifying commands
+  case "$command" in
+    set|random|clear|generate)
+      gbsw_acquire_lock || exit 1
+      ;;
+  esac
 
   case "$command" in
     set)

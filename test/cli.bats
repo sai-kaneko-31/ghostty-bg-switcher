@@ -7,6 +7,7 @@ setup() {
   TEST_DIR="$(mktemp -d)"
   TEST_CONFIG="$TEST_DIR/config"
   IMAGE_DIR="$TEST_DIR/images"
+  LOCK_DIR="$TEST_DIR/lock"
 
   cat > "$TEST_CONFIG" <<'EOF'
 font-size = 14
@@ -22,6 +23,7 @@ EOF
 
   export GBSW_CONFIG_PATH="$TEST_CONFIG"
   export GBSW_NO_RELOAD=1
+  export GBSW_LOCK_DIR="$LOCK_DIR"
 
   BIN="$(cd "$(dirname "$BATS_TEST_FILENAME")/../bin" && pwd)/ghostty-bg-switcher"
 }
@@ -184,4 +186,44 @@ teardown() {
   run "$BIN" current --config "$OTHER_CONFIG"
   [ "$status" -eq 0 ]
   [ "$output" = "/other/image.png" ]
+}
+
+# --- lock (concurrent execution prevention) ---
+
+@test "lock: modifying command fails when lock is held" {
+  # Simulate a running instance by creating lock dir with live PID
+  mkdir -p "$LOCK_DIR"
+  echo $$ > "$LOCK_DIR/pid"
+
+  run "$BIN" set "$IMAGE_DIR/a.png"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"already running"* ]]
+}
+
+@test "lock: read-only commands work even when locked" {
+  mkdir -p "$LOCK_DIR"
+  echo $$ > "$LOCK_DIR/pid"
+
+  run "$BIN" current
+  [ "$status" -eq 0 ]
+  [ "$output" = "/existing/bg.png" ]
+
+  run "$BIN" list "$IMAGE_DIR"
+  [ "$status" -eq 0 ]
+}
+
+@test "lock: stale lock is cleaned up automatically" {
+  # Create lock with a dead PID
+  mkdir -p "$LOCK_DIR"
+  echo 99999 > "$LOCK_DIR/pid"
+
+  run "$BIN" set "$IMAGE_DIR/a.png"
+  [ "$status" -eq 0 ]
+}
+
+@test "lock: lock is released after command completes" {
+  run "$BIN" set "$IMAGE_DIR/a.png"
+  [ "$status" -eq 0 ]
+  # Lock dir should not exist after completion
+  [ ! -d "$LOCK_DIR" ]
 }
