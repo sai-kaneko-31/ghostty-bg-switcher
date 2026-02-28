@@ -159,7 +159,7 @@ teardown() {
 
 @test "current: 背景画像未設定の場合はメッセージ表示" {
   # background-image を削除
-  sed -i'' '/^background-image /d' "$TEST_CONFIG"
+  grep -v '^background-image ' "$TEST_CONFIG" > "${TEST_CONFIG}.tmp" && mv "${TEST_CONFIG}.tmp" "$TEST_CONFIG"
   run "$BIN" current
   [ "$status" -eq 0 ]
   [[ "$output" != "" ]]

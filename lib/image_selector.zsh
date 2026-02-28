@@ -15,15 +15,16 @@ gbsw_list_images() {
   dir="$(cd "$dir" && pwd)"
 
   local images=()
-  while IFS= read -r -d '' file; do
-    local basename
-    basename="$(basename "$file")"
+  while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
+    local bname
+    bname="$(basename "$file")"
     # 隠しファイルを除外
-    [[ "$basename" == .* ]] && continue
+    [[ "$bname" == .* ]] && continue
     images+=("$file")
   done < <(find "$dir" -maxdepth 1 -type f \( \
     -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" \
-  \) -print0 | sort -z)
+  \) | sort)
 
   if [[ ${#images[@]} -eq 0 ]]; then
     echo "Error: No supported images found in: $dir" >&2

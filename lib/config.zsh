@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # config.zsh - Ghostty 設定ファイルの読み書き & リロード
 
+# ポータブルな sed in-place 編集（GNU/BSD 両対応）
+_gbsw_sed_inplace() {
+  local expr="$1"
+  local file="$2"
+  local tmp="${file}.gbsw_tmp"
+  sed -e "$expr" "$file" > "$tmp" && mv "$tmp" "$file"
+}
+
 # 設定ファイルのパスを返す
 # 優先順: GBSW_CONFIG_PATH > XDG > macOS Application Support
 gbsw_config_path() {
@@ -53,10 +61,8 @@ gbsw_config_set() {
   config_path="$(gbsw_config_path)" || return 1
 
   if grep -qE "^${key} *= *" "$config_path" 2>/dev/null; then
-    # 既存行を更新
-    sed -i'' -e "s|^${key} *= *.*|${key} = ${val}|" "$config_path"
+    _gbsw_sed_inplace "s|^${key} *= *.*|${key} = ${val}|" "$config_path"
   else
-    # 末尾に追加
     echo "${key} = ${val}" >> "$config_path"
   fi
 }
@@ -67,7 +73,7 @@ gbsw_config_remove() {
   local config_path
   config_path="$(gbsw_config_path)" || return 1
 
-  sed -i'' -e "/^${key} *= */d" "$config_path"
+  _gbsw_sed_inplace "/^${key} *= */d" "$config_path"
   return 0
 }
 
