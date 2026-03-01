@@ -12,6 +12,7 @@ source "$LIB_DIR/generator.zsh"
 
 GBSW_DEFAULT_SAVE_DIR="${HOME}/.local/share/ghostty-bg-switcher/generated"
 GBSW_LOCK_DIR="${GBSW_LOCK_DIR:-${TMPDIR:-/tmp}/ghostty-bg-switcher.lock}"
+GBSW_COOLDOWN_FILE="${GBSW_COOLDOWN_FILE:-${TMPDIR:-/tmp}/ghostty-bg-switcher-generate.stamp}"
 
 # Acquire lock using mkdir (atomic on POSIX).
 # Returns 1 if another instance is running.
@@ -35,6 +36,32 @@ gbsw_release_lock() {
   rm -rf "$GBSW_LOCK_DIR"
 }
 
+# Check cooldown for generate command.
+# $1: cooldown minutes
+# Returns 1 if still in cooldown period.
+gbsw_check_cooldown() {
+  local cooldown_min="$1"
+  if [[ ! -f "$GBSW_COOLDOWN_FILE" ]]; then
+    return 0
+  fi
+  local last_run now elapsed remaining_sec remaining_min
+  last_run="$(cat "$GBSW_COOLDOWN_FILE" 2>/dev/null)" || return 0
+  now="$(date +%s)"
+  elapsed=$(( now - last_run ))
+  local cooldown_sec=$(( cooldown_min * 60 ))
+  if [[ $elapsed -lt $cooldown_sec ]]; then
+    remaining_sec=$(( cooldown_sec - elapsed ))
+    remaining_min=$(( (remaining_sec + 59) / 60 ))
+    echo "Error: generate is in cooldown. Try again in ${remaining_min} minute(s)." >&2
+    return 1
+  fi
+  return 0
+}
+
+gbsw_write_cooldown_stamp() {
+  date +%s > "$GBSW_COOLDOWN_FILE"
+}
+
 gbsw_usage() {
   cat <<'USAGE'
 Usage: ghostty-bg-switcher <command> [options]
@@ -53,6 +80,7 @@ Options:
   --config <path>       Specify Ghostty config file path
   --no-reload           Skip config reload after changes
   --save-dir <path>     Directory to save generated images (for generate)
+  --cooldown <minutes>  Minimum interval between generate calls (for generate)
   --help                Show this help message
 USAGE
 }
@@ -76,6 +104,7 @@ main() {
   local config_path=""
   local no_reload=""
   local save_dir="$GBSW_DEFAULT_SAVE_DIR"
+  local cooldown=""
   local args=()
 
   # 引数パース
@@ -103,6 +132,10 @@ main() {
         ;;
       --save-dir)
         save_dir="$2"
+        shift 2
+        ;;
+      --cooldown)
+        cooldown="$2"
         shift 2
         ;;
       *)
@@ -210,6 +243,9 @@ main() {
         gbsw_usage >&2
         exit 2
       fi
+      if [[ -n "$cooldown" ]]; then
+        gbsw_check_cooldown "$cooldown" || exit 1
+      fi
       local prompt="${args[1]}"
       local timestamp
       timestamp="$(date +%Y%m%d_%H%M%S)"
@@ -219,6 +255,9 @@ main() {
       gbsw_config_set "background-image" "$generated"
       [[ -n "$opacity" ]] && gbsw_config_set "background-image-opacity" "$opacity"
       [[ -n "$fit" ]] && gbsw_config_set "background-image-fit" "$fit"
+      if [[ -n "$cooldown" ]]; then
+        gbsw_write_cooldown_stamp
+      fi
       gbsw_reload_config
       echo "Background image set to: $generated"
       ;;

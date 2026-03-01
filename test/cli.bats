@@ -24,6 +24,7 @@ EOF
   export GBSW_CONFIG_PATH="$TEST_CONFIG"
   export GBSW_NO_RELOAD=1
   export GBSW_LOCK_DIR="$LOCK_DIR"
+  export GBSW_COOLDOWN_FILE="$TEST_DIR/cooldown_stamp"
 
   BIN="$(cd "$(dirname "$BATS_TEST_FILENAME")/../bin" && pwd)/ghostty-bg-switcher"
 }
@@ -226,4 +227,102 @@ teardown() {
   [ "$status" -eq 0 ]
   # Lock dir should not exist after completion
   [ ! -d "$LOCK_DIR" ]
+}
+
+# --- cooldown (generate rate limiting) ---
+
+@test "cooldown: generate blocked during cooldown period" {
+  # Mock gemini
+  mkdir -p "$TEST_DIR/bin"
+  cat > "$TEST_DIR/bin/gemini" <<'MOCK'
+#!/bin/bash
+exit 0
+MOCK
+  chmod +x "$TEST_DIR/bin/gemini"
+  export PATH="$TEST_DIR/bin:$PATH"
+
+  # Write a timestamp 30 seconds ago
+  echo $(( $(date +%s) - 30 )) > "$GBSW_COOLDOWN_FILE"
+
+  run "$BIN" generate "test prompt" --cooldown 5
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"cooldown"* ]]
+}
+
+@test "cooldown: generate allowed after cooldown expires" {
+  # Mock gemini to create a dummy image
+  mkdir -p "$TEST_DIR/bin"
+  SAVE_DIR="$TEST_DIR/generated"
+  mkdir -p "$SAVE_DIR"
+  cat > "$TEST_DIR/bin/gemini" <<MOCK
+#!/bin/bash
+mkdir -p "$SAVE_DIR"
+echo "dummy" > "$SAVE_DIR/generated_image.png"
+exit 0
+MOCK
+  chmod +x "$TEST_DIR/bin/gemini"
+  export PATH="$TEST_DIR/bin:$PATH"
+
+  # Write a timestamp 600 seconds ago (10 minutes)
+  echo $(( $(date +%s) - 600 )) > "$GBSW_COOLDOWN_FILE"
+
+  run "$BIN" generate "test prompt" --cooldown 5 --save-dir "$SAVE_DIR"
+  [ "$status" -eq 0 ]
+}
+
+@test "cooldown: generate works without --cooldown option" {
+  # Mock gemini
+  mkdir -p "$TEST_DIR/bin"
+  SAVE_DIR="$TEST_DIR/generated"
+  mkdir -p "$SAVE_DIR"
+  cat > "$TEST_DIR/bin/gemini" <<MOCK
+#!/bin/bash
+mkdir -p "$SAVE_DIR"
+echo "dummy" > "$SAVE_DIR/generated_image.png"
+exit 0
+MOCK
+  chmod +x "$TEST_DIR/bin/gemini"
+  export PATH="$TEST_DIR/bin:$PATH"
+
+  # Even with a recent timestamp, no --cooldown means no restriction
+  echo $(date +%s) > "$GBSW_COOLDOWN_FILE"
+
+  run "$BIN" generate "test prompt" --save-dir "$SAVE_DIR"
+  [ "$status" -eq 0 ]
+}
+
+@test "cooldown: timestamp file is written after successful generate" {
+  mkdir -p "$TEST_DIR/bin"
+  SAVE_DIR="$TEST_DIR/generated"
+  mkdir -p "$SAVE_DIR"
+  cat > "$TEST_DIR/bin/gemini" <<MOCK
+#!/bin/bash
+mkdir -p "$SAVE_DIR"
+echo "dummy" > "$SAVE_DIR/generated_image.png"
+exit 0
+MOCK
+  chmod +x "$TEST_DIR/bin/gemini"
+  export PATH="$TEST_DIR/bin:$PATH"
+
+  [ ! -f "$GBSW_COOLDOWN_FILE" ]
+  run "$BIN" generate "test prompt" --cooldown 5 --save-dir "$SAVE_DIR"
+  [ "$status" -eq 0 ]
+  [ -f "$GBSW_COOLDOWN_FILE" ]
+}
+
+@test "cooldown: shows remaining time in error message" {
+  mkdir -p "$TEST_DIR/bin"
+  cat > "$TEST_DIR/bin/gemini" <<'MOCK'
+#!/bin/bash
+exit 0
+MOCK
+  chmod +x "$TEST_DIR/bin/gemini"
+  export PATH="$TEST_DIR/bin:$PATH"
+
+  # Write a timestamp 60 seconds ago, cooldown is 5 minutes
+  echo $(( $(date +%s) - 60 )) > "$GBSW_COOLDOWN_FILE"
+
+  run "$BIN" generate "test prompt" --cooldown 5
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"minute"* ]]
 }
